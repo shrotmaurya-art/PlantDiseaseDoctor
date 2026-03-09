@@ -1,0 +1,23 @@
+group 'com.zezo357.pytorch_lite'
+version '1.0'
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.zezo357.pytorch_lite'
+    compileSdkVersion 34
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    defaultConfig {
+        minSdkVersion 21
+    }
+}
+dependencies {
+    implementation 'org.pytorch:pytorch_android_lite:1.13.1'
+    implementation 'org.pytorch:pytorch_android_torchvision_lite:1.13.1'
+    implementation 'com.facebook.soloader:nativeloader:0.10.5'
+}

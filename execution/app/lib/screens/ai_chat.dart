@@ -103,7 +103,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
               color: AppColors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, -5),
                 ),
@@ -118,7 +118,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                       decoration: InputDecoration(
                         hintText: "Ask about your plants...",
                         hintStyle: TextStyle(
-                          color: AppColors.midGreyText.withOpacity(0.5),
+                          color: AppColors.midGreyText.withValues(alpha: 0.5),
                         ),
                         filled: true,
                         fillColor: AppColors.softBeige,
@@ -161,7 +161,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
           text,
           style: const TextStyle(fontSize: 12, color: AppColors.deepGreen),
         ),
-        backgroundColor: AppColors.leafGreen.withOpacity(0.1),
+        backgroundColor: AppColors.leafGreen.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: AppColors.leafGreen, width: 0.5),
@@ -192,7 +192,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 5,
               offset: const Offset(0, 2),
             ),

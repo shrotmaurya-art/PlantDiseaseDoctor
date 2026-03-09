@@ -4,11 +4,92 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:io';
 import '../theme/colors.dart';
+import '../services/plants_storage.dart';
 
-class ResultScreen extends StatelessWidget {
+class ResultScreen extends StatefulWidget {
   final Map<String, dynamic> resultData;
 
   const ResultScreen({super.key, required this.resultData});
+
+  @override
+  State<ResultScreen> createState() => _ResultScreenState();
+}
+
+class _ResultScreenState extends State<ResultScreen> {
+  bool _isSaving = false;
+  bool _saved = false;
+
+  Map<String, dynamic> get resultData => widget.resultData;
+
+  Future<void> _savePlant() async {
+    if (_saved || _isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final diseaseInfo = resultData['disease_info'] ?? {};
+      await PlantsStorage.save(
+        PlantEntry(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          imagePath: resultData['local_image_path'] ?? '',
+          plantName: resultData['plant_identification'] ?? 'Scanned Plant',
+          diseaseName:
+              diseaseInfo['disease_name'] ??
+              resultData['disease_detected'] ??
+              'Unknown',
+          severity: diseaseInfo['severity'] ?? 'Unknown',
+          description: diseaseInfo['description'] ?? '',
+          confidence: (resultData['confidence'] ?? 0.0).toDouble(),
+          savedAt: DateTime.now(),
+          organicRemedies: List<String>.from(
+            diseaseInfo['organic_remedies'] ?? [],
+          ),
+          chemicalTreatment: List<String>.from(
+            diseaseInfo['chemical_treatment'] ?? [],
+          ),
+          preventionTips: List<String>.from(
+            diseaseInfo['prevention_tips'] ?? [],
+          ),
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _saved = true;
+          _isSaving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text(
+                  'Saved to My Garden!',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.deepGreen,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            duration: const Duration(seconds: 2),
+            action: SnackBarAction(
+              label: 'View',
+              textColor: Colors.white,
+              onPressed: () => context.go('/plants'),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,10 +361,33 @@ class ResultScreen extends StatelessWidget {
             Row(
                   children: [
                     Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {},
+                      child: ElevatedButton.icon(
+                        onPressed: _saved ? null : _savePlant,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Icon(
+                                _saved
+                                    ? Icons.check
+                                    : Icons.bookmark_add_rounded,
+                              ),
+                        label: Text(
+                          _saved ? 'Saved!' : 'Save to My Plants',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.deepGreen,
+                          backgroundColor: _saved
+                              ? AppColors.leafGreen
+                              : AppColors.deepGreen,
                           foregroundColor: AppColors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -292,13 +396,6 @@ class ResultScreen extends StatelessWidget {
                           elevation: 5,
                           shadowColor: AppColors.deepGreen.withValues(
                             alpha: 0.5,
-                          ),
-                        ),
-                        child: const Text(
-                          'Save to My Plants',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
                           ),
                         ),
                       ),

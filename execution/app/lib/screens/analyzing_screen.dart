@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:io';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme/colors.dart';
-import '../services/ai_service.dart';
 import '../data/disease_remedies.dart';
+import '../services/ai_service.dart';
 
 class AnalyzingScreen extends StatefulWidget {
   final String? imagePath;
@@ -30,36 +28,59 @@ class _AnalyzingScreenState extends State<AnalyzingScreen> {
     }
 
     try {
-      // Offline local model processing
-      final prediction = await AIService.predict(widget.imagePath!);
+      // Offline on-device inference using pytorch_lite
+      final predictionResult = await AIService.predict(widget.imagePath!);
 
-      final className = prediction['class_name'] as String;
-      final confidence = prediction['confidence'] as double;
+      final rawClassName = predictionResult['class_name'] as String;
+      final confidence = predictionResult['confidence'] as double;
 
-      // Pull deterministic remedies dictionary matching the AI class
+      // Sanitize the class name to ensure it matches exactly with our data map keys
+      final className = rawClassName
+          .trim()
+          .replaceAll('"', '')
+          .replaceAll("'", '');
+      debugPrint("Raw prediction: '$rawClassName' -> Sanitized: '$className'");
+
+      if (className.startsWith("Error")) {
+        _showErrorAndReturn(className);
+        return;
+      }
+
+      // Look up richer database info
       final diseaseInfo =
-          DiseaseRemedies.data[className] ?? DiseaseRemedies.data['Unknown'];
-
-      // Construct routing payload matching the ResultScreen expected format
-      final payload = {
-        "success": true,
-        "plant_identification": className == "Healthy" || className == "Unknown"
-            ? "Scanned Plant"
-            : "Infected Plant",
-        "disease_detected": className,
-        "confidence": confidence,
-        "local_image_path": widget.imagePath,
-        "disease_info": diseaseInfo,
-      };
-
-      // Slight synthetic delay for UX premium loading feel
-      await Future.delayed(const Duration(seconds: 2));
+          DiseaseRemedies.data[className] ??
+          DiseaseRemedies.data['Unknown'] ??
+          {};
 
       if (mounted) {
-        context.pushReplacement('/result', extra: payload);
+        context.pushReplacement(
+          '/result',
+          extra: {
+            "success": true,
+            "plant_identification": diseaseInfo['plant'] ?? "Unknown Plant",
+            "disease_detected": className,
+            "confidence": confidence,
+            "local_image_path": widget.imagePath,
+            "disease_info": diseaseInfo,
+          },
+        );
       }
     } catch (e) {
-      _showErrorAndReturn("Processing failed: $e");
+      debugPrint("Analysis error: $e");
+      // Local fallback on extreme error
+      if (mounted) {
+        context.pushReplacement(
+          '/result',
+          extra: {
+            "success": false,
+            "plant_identification": "Scanned Plant",
+            "disease_detected": "Unknown",
+            "confidence": 0.0,
+            "local_image_path": widget.imagePath,
+            "disease_info": DiseaseRemedies.data['Unknown'],
+          },
+        );
+      }
     }
   }
 
@@ -74,119 +95,109 @@ class _AnalyzingScreenState extends State<AnalyzingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.softBeige,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Image Stack
-            Stack(
-              alignment: Alignment.center,
+      backgroundColor: AppColors.deepGreen,
+      body: Stack(
+        children: [
+          // Animated gradient background
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.deepGreen,
+                  AppColors.leafGreen.withValues(alpha: 0.7),
+                  AppColors.deepGreen,
+                ],
+              ),
+            ),
+          ),
+
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Outer glowing circle
+                // Pulsing circle loader
                 Container(
-                      width: 240,
-                      height: 240,
+                      width: 140,
+                      height: 140,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: AppColors.leafGreen.withValues(alpha: 0.1),
+                        color: Colors.white.withValues(alpha: 0.1),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.energy_savings_leaf_rounded,
+                        size: 64,
+                        color: Colors.white,
                       ),
                     )
-                    .animate(
-                      onPlay: (controller) => controller.repeat(reverse: true),
-                    )
+                    .animate(onPlay: (c) => c.repeat(reverse: true))
                     .scale(
-                      begin: const Offset(1, 1),
+                      begin: const Offset(0.9, 0.9),
                       end: const Offset(1.1, 1.1),
-                      duration: 1.5.seconds,
+                      duration: 1500.ms,
                       curve: Curves.easeInOut,
-                    )
-                    .fade(begin: 0.5, end: 1),
-
-                // Inner rotating dashed border (Circular Loader effect)
-                SizedBox(
-                  width: 220,
-                  height: 220,
-                  child: CircularProgressIndicator(
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      AppColors.deepGreen,
                     ),
-                    strokeWidth: 2,
-                    backgroundColor: AppColors.leafGreen.withValues(alpha: 0.2),
+
+                const SizedBox(height: 40),
+
+                Text(
+                  'Analyzing Plant',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
                   ),
-                ),
+                ).animate().fade(delay: 300.ms).slideY(begin: 0.3),
 
-                // Image payload
-                if (widget.imagePath != null)
-                  Container(
-                    width: 200,
-                    height: 200,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.deepGreen.withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          spreadRadius: 5,
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: kIsWeb
-                          ? Image.network(widget.imagePath!, fit: BoxFit.cover)
-                          : Image.file(
-                              File(widget.imagePath!),
-                              fit: BoxFit.cover,
+                const SizedBox(height: 12),
+
+                Text(
+                  'AI is examining your plant for diseases...',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 15,
+                  ),
+                ).animate().fade(delay: 500.ms),
+
+                const SizedBox(height: 40),
+
+                // Bouncing dots
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (int i = 0; i < 3; i++)
+                      Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 5),
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
                             ),
-                    ),
-                  ),
-
-                // Scanning Overlay
-                Container(
-                      width: 200,
-                      height: 200,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            AppColors.leafGreen.withValues(alpha: 0.4),
-                            Colors.transparent,
-                          ],
-                          stops: const [0.2, 1.0],
-                        ),
-                      ),
-                    )
-                    .animate(
-                      onPlay: (controller) => controller.repeat(reverse: true),
-                    )
-                    .fade(duration: 1.seconds),
+                          )
+                          .animate(onPlay: (c) => c.repeat())
+                          .moveY(
+                            begin: 0,
+                            end: -12,
+                            delay: Duration(milliseconds: i * 200),
+                            duration: 500.ms,
+                            curve: Curves.easeInOut,
+                          )
+                          .then()
+                          .moveY(begin: -12, end: 0, duration: 500.ms),
+                  ],
+                ),
               ],
-            ).animate().scale(curve: Curves.easeOutBack, duration: 800.ms),
-
-            const SizedBox(height: 48),
-
-            // Text
-            Text(
-                  'Analyzing plant health...',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.deepGreen,
-                  ),
-                )
-                .animate(onPlay: (controller) => controller.repeat())
-                .shimmer(duration: 2.seconds, color: AppColors.leafGreen)
-                .fadeIn(duration: 500.ms),
-
-            const SizedBox(height: 12),
-
-            Text(
-              'Running AI Model 🌿',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppColors.midGreyText),
-            ).animate().fade(delay: 500.ms).slideY(begin: 0.5),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }

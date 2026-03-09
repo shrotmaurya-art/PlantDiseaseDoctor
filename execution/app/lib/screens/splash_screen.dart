@@ -78,7 +78,7 @@ class _SplashScreenState extends State<SplashScreen>
                         color: AppColors.white,
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.leafGreen.withOpacity(0.2),
+                            color: AppColors.leafGreen.withValues(alpha: 0.2),
                             blurRadius: 30,
                             spreadRadius: 10,
                           ),

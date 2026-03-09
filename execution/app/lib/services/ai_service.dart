@@ -1,87 +1,143 @@
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 import 'package:pytorch_lite/pytorch_lite.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 
 class AIService {
   static ClassificationModel? _classifier;
+  static String? _loadError;
 
-  // These map to the order in the original Python implementation
+  // Standard PlantVillage 38 classes in alphabetical order
   static const List<String> classes = [
     "Apple Scab",
-    "Powdery Mildew",
-    "Healthy",
+    "Apple Black Rot",
+    "Apple Cedar Apple Rust",
+    "Healthy", // Apple healthy
+    "Healthy", // Blueberry healthy
+    "Cherry Powdery Mildew",
+    "Cherry Healthy", // Cherry healthy
+    "Corn Gray Leaf Spot",
+    "Corn Common Rust",
+    "Corn Northern Leaf Blight",
+    "Corn Healthy", // Corn healthy
+    "Grape Black Rot",
+    "Grape Esca Black Measles",
+    "Grape Leaf Blight Isariopsis",
+    "Grape Healthy", // Grape healthy
+    "Orange Haunglongbing Citrus Greening",
+    "Peach Bacterial Spot",
+    "Peach Healthy", // Peach healthy
+    "Bell Pepper Bacterial Spot",
+    "Bell Pepper Healthy", // Pepper healthy
+    "Potato Early Blight",
+    "Potato Late Blight",
+    "Potato Healthy", // Potato healthy
+    "Raspberry Healthy", // Raspberry healthy
+    "Soybean Healthy", // Soybean healthy
+    "Squash Powdery Mildew",
+    "Strawberry Leaf Scorch",
+    "Strawberry Healthy", // Strawberry healthy
+    "Tomato Bacterial Spot",
     "Tomato Early Blight",
+    "Tomato Late Blight",
+    "Tomato Leaf Mold",
+    "Tomato Septoria Leaf Spot",
+    "Tomato Spider Mites Two Spotted Spider Mite",
+    "Tomato Target Spot",
+    "Tomato Yellow Leaf Curl Virus",
+    "Tomato Mosaic Virus",
+    "Tomato Healthy", // Tomato healthy
   ];
 
   static Future<void> init() async {
+    if (kIsWeb) {
+      _loadError = "AI Inference is not supported on the Web platform.";
+      return;
+    }
+
     try {
-      // Ensure the labels file exists for pytorch_lite
-      final labelsPath = await _createTempLabelsFile();
-
       _classifier = await PytorchLite.loadClassificationModel(
-        "assets/models/model_scripted.pt",
+        "assets/models/model_optimized.ptl", // Using the mobile-optimized model
         224,
         224,
-        labelPath: labelsPath,
+        labelPath: "assets/models/labels.txt",
       );
-      print("Local AI Model Loaded Successfully");
+      debugPrint("Local AI Model Loaded Successfully");
+      _loadError = null;
     } catch (e) {
-      print("Failed to load local AI model: $e");
+      debugPrint("Failed to load local AI model: $e");
+      _loadError = e.toString();
     }
-  }
-
-  static Future<String> _createTempLabelsFile() async {
-    final directory = await getTemporaryDirectory();
-    final path = '${directory.path}/labels.txt';
-    final file = File(path);
-
-    // Create 38 lines of placeholders/classes
-    String labelsContent = "";
-    for (int i = 0; i < 38; i++) {
-      if (i < classes.length) {
-        labelsContent += "${classes[i]}\n";
-      } else {
-        labelsContent += "Class_$i\n";
-      }
-    }
-
-    await file.writeAsString(labelsContent);
-    return path;
   }
 
   static Future<Map<String, dynamic>> predict(String imagePath) async {
+    if (kIsWeb) {
+      return {
+        "class_name":
+            "Error: AI Inference is not supported on the Web platform (try on Android/iOS).",
+        "confidence": 0.0,
+      };
+    }
+
     if (_classifier == null) {
       await init();
     }
 
     if (_classifier == null) {
-      return {"class_name": "Unknown", "confidence": 0.0};
+      return {
+        "class_name": "Error: ${_loadError ?? 'Model not loaded'}",
+        "confidence": 0.0,
+      };
     }
 
     try {
-      // pytorch_lite expects a dart:io File string path or bytes. getImagePrediction normally takes a File
-      String prediction = await _classifier!.getImagePrediction(
-        await File(imagePath).readAsBytes(),
-      );
+      final Uint8List imageBytes = await File(imagePath).readAsBytes();
 
-      List<double?>? rawProbs = await _classifier!.getImagePredictionList(
-        await File(imagePath).readAsBytes(),
+      // Get raw logits from the model (NOT pre-softmaxed probabilities,
+      // to avoid double-softmax if the model already applies softmax).
+      List<double?>? rawScores = await _classifier!.getImagePredictionList(
+        imageBytes,
       );
-      List<double> probabilities = rawProbs?.whereType<double>().toList() ?? [];
 
       double maxConf = 0.0;
-      if (probabilities.isNotEmpty) {
-        maxConf = probabilities.reduce(
-          (curr, next) => curr > next ? curr : next,
+      int maxIdx = 0;
+
+      if (rawScores != null && rawScores.isNotEmpty) {
+        // Apply softmax manually to convert logits to probabilities
+        double maxLogit = rawScores.fold<double>(
+          double.negativeInfinity,
+          (a, b) => (b ?? double.negativeInfinity) > a ? b! : a,
         );
-      } else {
-        maxConf = 0.90; // Fallback acceptable confidence
+        double sumExp = 0.0;
+        List<double> probs = [];
+        for (var s in rawScores) {
+          double e = exp(
+            (s ?? 0.0) - maxLogit,
+          ); // subtract max for numerical stability
+          probs.add(e);
+          sumExp += e;
+        }
+        for (int i = 0; i < probs.length; i++) {
+          double prob = probs[i] / sumExp;
+          if (prob > maxConf) {
+            maxConf = prob;
+            maxIdx = i;
+          }
+        }
+      }
+
+      // Ensure index is within labels bounds
+      String prediction = "Unknown";
+      if (_classifier!.labels.isNotEmpty) {
+        prediction = _classifier!
+            .labels[maxIdx < _classifier!.labels.length ? maxIdx : 0];
       }
 
       return {"class_name": prediction, "confidence": maxConf};
     } catch (e) {
-      print("Inference error: $e");
-      return {"class_name": "Unknown", "confidence": 0.0};
+      debugPrint("Inference error: $e");
+      return {"class_name": "Error: Inference failed", "confidence": 0.0};
     }
   }
 }

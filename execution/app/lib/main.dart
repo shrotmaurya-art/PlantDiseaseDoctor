@@ -10,7 +10,11 @@ import 'screens/my_plants.dart';
 import 'screens/disease_library.dart';
 import 'screens/ai_chat.dart';
 
-void main() {
+import 'services/ai_service.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AIService.init();
   runApp(const PlantDoctorApp());
 }
 

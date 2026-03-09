@@ -10,7 +10,6 @@ class AppTheme {
       colorScheme: ColorScheme.light(
         primary: AppColors.deepGreen,
         secondary: AppColors.leafGreen,
-        background: AppColors.softBeige,
         surface: AppColors.white,
       ),
       textTheme: TextTheme(
@@ -58,7 +57,7 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: AppColors.white,
         elevation: 2,
-        shadowColor: Colors.black.withOpacity(0.05),
+        shadowColor: Colors.black.withValues(alpha: 0.05),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
     );
